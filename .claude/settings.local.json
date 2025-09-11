@@ -1,0 +1,17 @@
+{
+  "permissions": {
+    "allow": [
+      "Read(//c//**)",
+      "Read(//c/RealEstateDashboard/**)",
+      "Bash(awk:*)",
+      "Read(//c/MagicWall/**)",
+      "Bash(curl:*)",
+      "Bash(python:*)",
+      "Bash(node:*)",
+      "Bash(git init:*)",
+      "Bash(git add:*)"
+    ],
+    "deny": [],
+    "ask": []
+  }
+}

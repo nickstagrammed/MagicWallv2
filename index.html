@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Presidential Election Results Map</title>
+    <script src="https://d3js.org/d3.v7.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/topojson@3"></script>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <div class="header">
+        <h1>Presidential Election Results</h1>
+        <div class="controls">
+            <select id="yearSelect" class="year-dropdown">
+                <option value="2024">2024</option>
+                <option value="2020">2020</option>
+                <option value="2016">2016</option>
+                <option value="2012">2012</option>
+                <option value="2008">2008</option>
+                <option value="2004">2004</option>
+                <option value="2000">2000</option>
+            </select>
+            <nav class="breadcrumb" id="breadcrumb">
+                <span class="breadcrumb-item active" id="breadcrumb-national">National</span>
+                <span class="breadcrumb-separator" style="display: none;"> > </span>
+                <span class="breadcrumb-item" id="breadcrumb-state" style="display: none;"></span>
+                <span class="breadcrumb-separator" style="display: none;"> > </span>
+                <span class="breadcrumb-item" id="breadcrumb-statewide" style="display: none;">Counties</span>
+                <span class="breadcrumb-separator" style="display: none;"> > </span>
+                <span class="breadcrumb-item" id="breadcrumb-county" style="display: none;"></span>
+            </nav>
+            <button id="drillUpButton" class="drill-up-button" style="display: none;" title="Drill Up">↺</button>
+        </div>
+    </div>
+    
+    <div class="main-container">
+        <div id="map-container">
+            <svg id="map"></svg>
+        </div>
+        
+        <div class="sidebar">
+            <div class="sidebar-header">
+                <h2 id="sidebar-title">National Results</h2>
+            </div>
+            <div class="sidebar-content">
+                <div id="winner-info" class="winner-section">
+                    <div class="winner-banner">
+                        <span class="winner-text">Winner</span>
+                        <div class="winner-details">
+                            <span id="winner-name"></span>
+                            <span id="winner-party"></span>
+                        </div>
+                    </div>
+                </div>
+                <div id="results-summary">
+                    <p>Select a year and click on states to explore detailed results.</p>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <div class="legend">
+        <div class="legend-item">
+            <div class="legend-color republican"></div>
+            <span>Republican</span>
+        </div>
+        <div class="legend-item">
+            <div class="legend-color democrat"></div>
+            <span>Democrat</span>
+        </div>
+        <div class="legend-item">
+            <div class="legend-color other"></div>
+            <span>Other/Third Party</span>
+        </div>
+    </div>
+
+    <script src="election-map.js"></script>
+</body>
+</html>
