@@ -371,6 +371,16 @@ body {
         font-size: 1.3rem;
     }
     
+    .drill-up-button {
+        padding: 0.7rem 1.2rem;
+        font-size: 1.4rem;
+        background: #444;
+        border: 1px solid #666;
+        border-radius: 6px;
+        margin-left: 0.5rem;
+        min-width: 48px;
+    }
+    
     .main-container {
         flex-direction: column;
         margin-top: 120px;
@@ -436,7 +446,7 @@ body {
     }
     
     .sidebar-content {
-        padding-top: 30px;
+        padding-top: 15px;
         height: calc(100% - 30px);
         overflow-y: auto;
         overflow-x: hidden;
@@ -450,9 +460,13 @@ body {
     
     .sidebar-header {
         flex-shrink: 0;
-        padding: 1rem;
-        margin-bottom: 1rem;
+        padding: 0.5rem 1rem 1rem 1rem;
+        margin-bottom: 0.5rem;
         font-size: 1.1rem;
+        background: #2a2a2a;
+        position: sticky;
+        top: 0;
+        z-index: 2;
     }
     
     .sidebar-header h2 {
