@@ -296,25 +296,34 @@ class ElectionMap {
         sidebarHandle.addEventListener('touchend', handleTouchEnd, { passive: false });
         sidebarHandle.addEventListener('click', handleHandleClick);
         
-        // Also add touch listeners to sidebar header for dragging
-        const sidebarHeader = document.querySelector('.sidebar-header');
-        if (sidebarHeader) {
-            sidebarHeader.addEventListener('touchstart', handleTouchStart, { passive: false });
-            sidebarHeader.addEventListener('touchmove', handleTouchMove, { passive: false });
-            sidebarHeader.addEventListener('touchend', handleTouchEnd, { passive: false });
-        }
-        
-        // Allow natural scrolling in content area
+        // Allow natural scrolling in content area, but enable dragging from header
         const sidebarContent = document.querySelector('.sidebar-content');
+        const sidebarHeader = document.querySelector('.sidebar-header');
+        
         if (sidebarContent) {
-            // Prevent sidebar dragging when scrolling content
+            // Prevent sidebar dragging when scrolling content (except on header)
             sidebarContent.addEventListener('touchstart', (e) => {
+                // Allow dragging if touch starts on header
+                if (sidebarHeader && sidebarHeader.contains(e.target)) {
+                    return; // Don't stop propagation for header touches
+                }
                 e.stopPropagation();
             }, { passive: true });
             
             sidebarContent.addEventListener('touchmove', (e) => {
+                // Allow dragging if currently dragging from header
+                if (isDragging) {
+                    return; // Don't stop propagation during active drag
+                }
                 e.stopPropagation();
             }, { passive: true });
+        }
+        
+        // Add touch listeners to header for dragging (now that it's inside content)
+        if (sidebarHeader) {
+            sidebarHeader.addEventListener('touchstart', handleTouchStart, { passive: false });
+            sidebarHeader.addEventListener('touchmove', handleTouchMove, { passive: false });
+            sidebarHeader.addEventListener('touchend', handleTouchEnd, { passive: false });
         }
         
         // Global touch handler to clear tooltips on any touch
