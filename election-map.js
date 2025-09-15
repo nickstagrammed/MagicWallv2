@@ -286,11 +286,28 @@ class ElectionMap {
             isExpanded = false;
         };
         
-        // Add event listeners
-        sidebar.addEventListener('touchstart', handleTouchStart, { passive: false });
-        sidebar.addEventListener('touchmove', handleTouchMove, { passive: false });
-        sidebar.addEventListener('touchend', handleTouchEnd, { passive: false });
+        // Add event listeners - only to handle and header, not content area
+        sidebarHandle.addEventListener('touchstart', handleTouchStart, { passive: false });
+        sidebarHandle.addEventListener('touchmove', handleTouchMove, { passive: false });
+        sidebarHandle.addEventListener('touchend', handleTouchEnd, { passive: false });
         sidebarHandle.addEventListener('click', handleHandleClick);
+        
+        // Also add touch listeners to sidebar header for dragging
+        const sidebarHeader = document.querySelector('.sidebar-header');
+        if (sidebarHeader) {
+            sidebarHeader.addEventListener('touchstart', handleTouchStart, { passive: false });
+            sidebarHeader.addEventListener('touchmove', handleTouchMove, { passive: false });
+            sidebarHeader.addEventListener('touchend', handleTouchEnd, { passive: false });
+        }
+        
+        // Prevent content area from interfering with scrolling
+        const sidebarContent = document.querySelector('.sidebar-content');
+        if (sidebarContent) {
+            sidebarContent.addEventListener('touchstart', (e) => {
+                // Only allow scrolling in content area, not dragging
+                e.stopPropagation();
+            }, { passive: true });
+        }
         
         // Handle window resize
         window.addEventListener('resize', () => {
