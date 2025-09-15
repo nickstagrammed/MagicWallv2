@@ -13,6 +13,7 @@ class ElectionMap {
         this.path = null;
         this.topology = null;
         this.countiesTopology = null;
+        this.isMobileDevice = window.innerWidth <= 768; // Initialize mobile detection
         
         // Alaska district FIPS to real Alaska borough FIPS mapping
         this.alaskaFipsMapping = {
@@ -196,6 +197,9 @@ class ElectionMap {
         const isMobile = window.innerWidth <= 768;
         if (!isMobile) return;
         
+        // Store mobile state for tooltip management
+        this.isMobileDevice = true;
+        
         // Touch start
         const handleTouchStart = (e) => {
             startY = e.touches[0].clientY;
@@ -300,18 +304,28 @@ class ElectionMap {
             sidebarHeader.addEventListener('touchend', handleTouchEnd, { passive: false });
         }
         
-        // Prevent content area from interfering with scrolling
+        // Allow natural scrolling in content area
         const sidebarContent = document.querySelector('.sidebar-content');
         if (sidebarContent) {
+            // Prevent sidebar dragging when scrolling content
             sidebarContent.addEventListener('touchstart', (e) => {
-                // Only allow scrolling in content area, not dragging
+                e.stopPropagation();
+            }, { passive: true });
+            
+            sidebarContent.addEventListener('touchmove', (e) => {
                 e.stopPropagation();
             }, { passive: true });
         }
         
+        // Global touch handler to clear tooltips on any touch
+        document.addEventListener('touchstart', () => {
+            this.hideTooltip();
+        }, { passive: true });
+        
         // Handle window resize
         window.addEventListener('resize', () => {
             const newIsMobile = window.innerWidth <= 768;
+            this.isMobileDevice = newIsMobile;
             if (newIsMobile !== isMobile) {
                 // Reset sidebar state when switching between mobile/desktop
                 sidebar.classList.remove('expanded');
@@ -847,11 +861,18 @@ class ElectionMap {
                 this.navigateToState(stateName);
             })
             .on('mouseover', (event, d) => {
+                // Skip tooltips on mobile to prevent sticky hover
+                if (this.isMobileDevice) return;
+                
                 const stateName = this.getStateName(d.id);
                 const result = yearResults.get(stateName);
                 this.showStateTooltip(event, stateName, result);
             })
             .on('mouseout', () => {
+                this.hideTooltip();
+            })
+            .on('touchend', () => {
+                // Clear any tooltips on touch devices
                 this.hideTooltip();
             });
             
@@ -1008,6 +1029,9 @@ class ElectionMap {
                 }
             })
             .on('mouseover', (event, d) => {
+                // Skip tooltips on mobile to prevent sticky hover
+                if (this.isMobileDevice) return;
+                
                 const lookup = statewideCountyLookups.get(d.id.toString());
                 
                 if (lookup?.result) {
@@ -1015,6 +1039,10 @@ class ElectionMap {
                 }
             })
             .on('mouseout', () => {
+                this.hideTooltip();
+            })
+            .on('touchend', () => {
+                // Clear any tooltips on touch devices
                 this.hideTooltip();
             });
     }
@@ -1130,6 +1158,9 @@ class ElectionMap {
                 event.stopPropagation();
             })
             .on('mouseover', (event, d) => {
+                // Skip tooltips on mobile to prevent sticky hover
+                if (this.isMobileDevice) return;
+                
                 const lookup = countyLookups.get(d.id.toString());
                 
                 if (lookup?.result) {
@@ -1138,6 +1169,10 @@ class ElectionMap {
                 }
             })
             .on('mouseleave', () => {
+                this.hideTooltip();
+            })
+            .on('touchend', () => {
+                // Clear any tooltips on touch devices
                 this.hideTooltip();
             });
         
