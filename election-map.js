@@ -195,7 +195,11 @@ class ElectionMap {
         
         // Check if device is mobile
         const isMobile = window.innerWidth <= 768;
-        if (!isMobile) return;
+        console.log('Mobile check:', { windowWidth: window.innerWidth, isMobile });
+        if (!isMobile) {
+            console.log('Not mobile, skipping swipe setup');
+            return;
+        }
         
         // Store mobile state for tooltip management
         this.isMobileDevice = true;
@@ -298,15 +302,21 @@ class ElectionMap {
         
         // Add event listeners to the entire sidebar for dragging, but with smart detection
         sidebar.addEventListener('touchstart', (e) => {
+            console.log('Sidebar touchstart detected');
             const rect = sidebar.getBoundingClientRect();
             const touchY = e.touches[0].clientY;
             const relativeY = touchY - rect.top;
+            
+            console.log('Touch position:', { touchY, rectTop: rect.top, relativeY, isExpanded });
             
             // Allow dragging from:
             // 1. Top 100px of sidebar (handle + header area)
             // 2. Or if sidebar is collapsed (only handle visible)
             if (relativeY < 100 || !isExpanded) {
+                console.log('Calling handleTouchStart');
                 handleTouchStart(e);
+            } else {
+                console.log('Touch outside drag area');
             }
         }, { passive: false });
         
