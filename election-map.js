@@ -213,20 +213,22 @@ class ElectionMap {
             currentY = e.touches[0].clientY;
             const deltaY = startY - currentY;
             
-            // Calculate new position with smoother boundaries
-            const maxHeight = sidebar.offsetHeight - 60;
-            let newTranslateY;
+            // Use fixed heights for consistent behavior
+            const viewportHeight = window.innerHeight;
+            const sidebarHeight = viewportHeight * 0.75; // 75vh
+            const collapsedOffset = sidebarHeight - 60; // Show 60px when collapsed
             
+            let newPosition;
             if (isExpanded) {
-                // When expanded, allow dragging down with resistance
-                newTranslateY = Math.min(0, Math.max(-maxHeight, -deltaY * 0.8));
+                // When expanded, allow dragging down
+                const expandedPosition = viewportHeight - sidebarHeight; // 25vh from top
+                newPosition = Math.min(collapsedOffset, Math.max(expandedPosition, expandedPosition - deltaY * 0.8));
             } else {
-                // When collapsed, allow dragging up with resistance
-                newTranslateY = Math.min(0, Math.max(-maxHeight, -deltaY * 0.8));
+                // When collapsed, allow dragging up
+                newPosition = Math.min(collapsedOffset, Math.max(viewportHeight - sidebarHeight, collapsedOffset - deltaY * 0.8));
             }
             
-            const baseTransform = isExpanded ? 0 : maxHeight;
-            sidebar.style.transform = `translateY(${baseTransform + newTranslateY}px)`;
+            sidebar.style.transform = `translateY(${newPosition}px)`;
         };
         
         // Touch end
@@ -271,7 +273,7 @@ class ElectionMap {
         // Expand sidebar
         this.expandSidebar = () => {
             sidebar.style.transition = 'transform 0.4s cubic-bezier(0.25, 0.46, 0.45, 0.94)';
-            sidebar.style.transform = 'translateY(0)';
+            sidebar.style.transform = 'translateY(25vh)'; // Fixed position: 25vh from top
             sidebar.classList.add('expanded');
             isExpanded = true;
         };
@@ -279,7 +281,7 @@ class ElectionMap {
         // Collapse sidebar
         this.collapseSidebar = () => {
             sidebar.style.transition = 'transform 0.4s cubic-bezier(0.25, 0.46, 0.45, 0.94)';
-            sidebar.style.transform = 'translateY(calc(100% - 60px))';
+            sidebar.style.transform = 'translateY(calc(75vh - 60px))'; // Show only 60px
             sidebar.classList.remove('expanded');
             isExpanded = false;
         };
