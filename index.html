@@ -4,8 +4,22 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Presidential Election Results Map</title>
-    <script src="https://d3js.org/d3.v7.min.js"></script>
+    <!-- Prevent favicon.ico 404 error -->
+    <link rel="icon" href="data:,">
+    <script src="https://cdn.jsdelivr.net/npm/d3@7"></script>
+    <script>
+        // Fallback for d3 if primary CDN fails
+        if (typeof d3 === 'undefined') {
+            document.write('<script src="https://cdnjs.cloudflare.com/ajax/libs/d3/7.9.0/d3.min.js"><\/script>');
+        }
+    </script>
     <script src="https://cdn.jsdelivr.net/npm/topojson@3"></script>
+    <script>
+        // Fallback for topojson if primary CDN fails
+        if (typeof topojson === 'undefined') {
+            document.write('<script src="https://cdnjs.cloudflare.com/ajax/libs/topojson/3.0.2/topojson.min.js"><\/script>');
+        }
+    </script>
     <link rel="stylesheet" href="styles.css">
 </head>
 <body>
@@ -40,6 +54,8 @@
         </div>
         
         <div class="sidebar">
+            <div class="sidebar-handle"></div>
+            <div class="sidebar-hint">Swipe up for results</div>
             <div class="sidebar-header">
                 <h2 id="sidebar-title">National Results</h2>
             </div>
@@ -68,6 +84,10 @@
         <div class="legend-item">
             <div class="legend-color democrat"></div>
             <span>Democrat</span>
+        </div>
+        <div class="legend-item">
+            <div class="legend-color libertarian"></div>
+            <span>Libertarian</span>
         </div>
         <div class="legend-item">
             <div class="legend-color other"></div>

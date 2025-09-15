@@ -11,6 +11,37 @@ body {
     overflow: hidden;
 }
 
+/* Loading spinner animation */
+@keyframes spin {
+    0% { transform: rotate(0deg); }
+    100% { transform: rotate(360deg); }
+}
+
+.loading-state {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 2rem;
+    color: #ccc;
+}
+
+.loading-spinner {
+    width: 20px;
+    height: 20px;
+    border: 2px solid #333;
+    border-top: 2px solid #007bff;
+    border-radius: 50%;
+    animation: spin 1s linear infinite;
+    margin-bottom: 0.5rem;
+}
+
+/* County selection effects - lighter version for better performance */
+.county.selected-county {
+    filter: drop-shadow(0 0 4px rgba(255,255,255,0.8));
+    transform: translate(0, -0.5px);
+}
+
 .header {
     display: flex;
     justify-content: space-between;
@@ -210,6 +241,10 @@ body {
     border-left-color: #9370DB;
 }
 
+.result-item.libertarian {
+    border-left-color: #FED105;
+}
+
 .candidate-name {
     font-weight: 600;
     margin-bottom: 0.3rem;
@@ -262,6 +297,10 @@ body {
     background: #9370DB;
 }
 
+.legend-color.libertarian {
+    background: #FED105;
+}
+
 /* Map styling */
 .state {
     stroke: #ffffff;
@@ -285,6 +324,10 @@ body {
 
 .state.other {
     fill: #9370DB;
+}
+
+.state.libertarian {
+    fill: #FED105;
 }
 
 .county {
@@ -311,6 +354,10 @@ body {
     fill: #9370DB;
 }
 
+.county.libertarian {
+    fill: #FED105;
+}
+
 /* Responsive design */
 @media (max-width: 768px) {
     .header {
@@ -327,23 +374,98 @@ body {
     .main-container {
         flex-direction: column;
         margin-top: 120px;
+        height: calc(100vh - 120px);
+        position: relative;
+        overflow: hidden;
     }
     
     .sidebar {
+        position: fixed;
+        bottom: 0;
+        left: 0;
+        right: 0;
         width: 100%;
-        max-height: 40vh;
-        order: 2;
+        max-height: 70vh;
+        min-height: 60px;
+        background: #2a2a2a;
+        border-top-left-radius: 20px;
+        border-top-right-radius: 20px;
+        transform: translateY(calc(100% - 60px));
+        transition: transform 0.3s ease-out;
+        z-index: 1000;
+        box-shadow: 0 -5px 20px rgba(0, 0, 0, 0.3);
+    }
+    
+    .sidebar.expanded {
+        transform: translateY(0);
+    }
+    
+    .sidebar-handle {
+        position: absolute;
+        top: 10px;
+        left: 50%;
+        transform: translateX(-50%);
+        width: 40px;
+        height: 4px;
+        background: #888;
+        border-radius: 2px;
+        cursor: pointer;
+        transition: background 0.2s ease;
+    }
+    
+    .sidebar-handle:hover,
+    .sidebar-handle:active {
+        background: #aaa;
+    }
+    
+    .sidebar-hint {
+        position: absolute;
+        top: 20px;
+        left: 50%;
+        transform: translateX(-50%);
+        font-size: 0.7rem;
+        color: #888;
+        pointer-events: none;
+        opacity: 0.8;
+        text-align: center;
+        transition: opacity 0.3s ease;
+    }
+    
+    .sidebar.expanded .sidebar-hint {
+        opacity: 0;
+    }
+    
+    .sidebar-content {
+        padding-top: 30px;
+        height: calc(100% - 30px);
+        overflow-y: auto;
+        -webkit-overflow-scrolling: touch;
+    }
+    
+    /* Prevent body scroll when dragging sidebar */
+    body.sidebar-dragging {
+        overflow: hidden;
+        touch-action: none;
     }
     
     #map-container {
-        height: 60vh;
-        order: 1;
+        height: 100%;
+        width: 100%;
     }
     
     .legend {
-        position: static;
-        margin: 1rem;
-        order: 3;
+        position: absolute;
+        bottom: 80px;
+        left: 1rem;
+        right: auto;
+        background: rgba(42, 42, 42, 0.9);
+        padding: 0.5rem;
+        border-radius: 8px;
+    }
+    
+    .legend-item {
+        margin-bottom: 0.3rem;
+        font-size: 0.8rem;
     }
 }
 

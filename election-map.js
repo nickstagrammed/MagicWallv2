@@ -24,6 +24,11 @@ class ElectionMap {
             '2026': '02195', '2027': '02198', '2028': '02130', '2029': '02105', '2030': '02063',
             '2031': '02066', '2032': '02158'
         };
+        
+        // Georgia FIPS code corrections for data inconsistencies
+        this.georgiaFipsMapping = {
+            '13211': '13209'  // Morgan County: TopoJSON uses 13211, 2024 data uses 13209
+        };
         this.tooltip = null;
         this.zoom = null;
         
@@ -35,20 +40,57 @@ class ElectionMap {
         this.navigationTimeout = null;
         this.fipsMatchCache = new Map(); // Cache FIPS format matching results
         
+        // State-based lazy loading
+        this.processedStateData = new Map(); // Track processed state+year combinations
+        this.stateCountyData = new Map(); // Cache county data by state+year
+        
+        // Performance caches for county rendering
+        this.stateCountiesCache = new Map(); // Cache TopoJSON county features by state
+        this.countyFipsCache = new Map(); // Cache FIPS format mappings
+        this.countyPathCache = new Map(); // Cache pre-computed SVG paths by state
+        this.countyBoundsCache = new Map(); // Cache county bounds for zoom operations
+        
+        // Add cache clearing method
+        this.clearPerformanceCaches = () => {
+            this.stateCountiesCache.clear();
+            this.countyFipsCache.clear();
+            this.fipsMatchCache.clear();
+            this.countyPathCache.clear();
+            this.countyBoundsCache.clear();
+            console.log('All performance caches cleared (including path and bounds cache)');
+        };
+        
         this.init();
     }
 
     async init() {
-        this.setupSVG();
-        this.createTooltip();
-        this.setupEventListeners();
-        
+        console.log('Starting map initialization...');
         try {
+            console.log('Setting up SVG...');
+            this.setupSVG();
+            
+            console.log('Creating tooltip...');
+            this.createTooltip();
+            
+            console.log('Setting up event listeners...');
+            this.setupEventListeners();
+            
+            console.log('Loading topology...');
             await this.loadTopology();
+            
+            console.log('Loading election data...');
             await this.loadElectionData();
+            
+            console.log('Rendering national view...');
             this.renderNationalView();
+            
+            console.log('Updating sidebar...');
             this.updateSidebar();
+            
+            console.log('Updating breadcrumb...');
             this.updateBreadcrumb();
+            
+            console.log('Map initialization complete!');
         } catch (error) {
             console.error('Error initializing map:', error);
             this.showError('Failed to load map data. Please ensure all files are accessible via HTTP server.');
@@ -67,7 +109,7 @@ class ElectionMap {
         
         // Setup projection for US map - AlbersUsa is optimized for US maps
         this.projection = d3.geoAlbersUsa()
-            .scale(Math.min(rect.width, rect.height) * 0.8)
+            .scale(Math.min(rect.width, rect.height) * 1.0)
             .translate([rect.width / 2, rect.height / 2]);
             
         this.path = d3.geoPath().projection(this.projection);
@@ -116,6 +158,9 @@ class ElectionMap {
             }
         });
         
+        // Mobile swipe functionality
+        this.setupMobileSwipe();
+        
         // Breadcrumb navigation
         document.getElementById('breadcrumb-national').addEventListener('click', () => {
             this.navigateToNational();
@@ -127,15 +172,123 @@ class ElectionMap {
             }
         });
         
-        document.getElementById('breadcrumb-statewide').addEventListener('click', () => {
+        document.getElementById('breadcrumb-statewide').addEventListener('click', async () => {
             if (this.currentState) {
-                this.navigateToStatewide(this.currentState);
+                await this.navigateToStatewide(this.currentState);
             }
         });
         
         // Drill-up button
-        document.getElementById('drillUpButton').addEventListener('click', () => {
-            this.drillUp();
+        document.getElementById('drillUpButton').addEventListener('click', async () => {
+            await this.drillUp();
+        });
+    }
+    
+    setupMobileSwipe() {
+        const sidebar = document.querySelector('.sidebar');
+        const sidebarHandle = document.querySelector('.sidebar-handle');
+        let startY = 0;
+        let currentY = 0;
+        let isDragging = false;
+        let isExpanded = false;
+        
+        // Check if device is mobile
+        const isMobile = window.innerWidth <= 768;
+        if (!isMobile) return;
+        
+        // Touch start
+        const handleTouchStart = (e) => {
+            startY = e.touches[0].clientY;
+            isDragging = true;
+            sidebar.style.transition = 'none';
+            document.body.classList.add('sidebar-dragging');
+        };
+        
+        // Touch move
+        const handleTouchMove = (e) => {
+            if (!isDragging) return;
+            
+            currentY = e.touches[0].clientY;
+            const deltaY = startY - currentY;
+            
+            // Calculate new position
+            let newTranslateY;
+            if (isExpanded) {
+                // When expanded, allow dragging down
+                newTranslateY = Math.min(0, -deltaY);
+            } else {
+                // When collapsed, allow dragging up
+                newTranslateY = Math.max(-(sidebar.offsetHeight - 60), -deltaY);
+            }
+            
+            sidebar.style.transform = `translateY(calc(100% - 60px + ${newTranslateY}px))`;
+        };
+        
+        // Touch end
+        const handleTouchEnd = (e) => {
+            if (!isDragging) return;
+            
+            isDragging = false;
+            sidebar.style.transition = 'transform 0.3s ease-out';
+            document.body.classList.remove('sidebar-dragging');
+            
+            const deltaY = startY - currentY;
+            const threshold = 50; // Minimum swipe distance
+            
+            if (Math.abs(deltaY) > threshold) {
+                if (deltaY > 0 && !isExpanded) {
+                    // Swipe up - expand
+                    this.expandSidebar();
+                } else if (deltaY < 0 && isExpanded) {
+                    // Swipe down - collapse
+                    this.collapseSidebar();
+                }
+            } else {
+                // Snap back to current state
+                if (isExpanded) {
+                    this.expandSidebar();
+                } else {
+                    this.collapseSidebar();
+                }
+            }
+        };
+        
+        // Handle click on sidebar handle
+        const handleHandleClick = () => {
+            if (isExpanded) {
+                this.collapseSidebar();
+            } else {
+                this.expandSidebar();
+            }
+        };
+        
+        // Expand sidebar
+        this.expandSidebar = () => {
+            sidebar.classList.add('expanded');
+            isExpanded = true;
+        };
+        
+        // Collapse sidebar
+        this.collapseSidebar = () => {
+            sidebar.classList.remove('expanded');
+            isExpanded = false;
+        };
+        
+        // Add event listeners
+        sidebar.addEventListener('touchstart', handleTouchStart, { passive: false });
+        sidebar.addEventListener('touchmove', handleTouchMove, { passive: false });
+        sidebar.addEventListener('touchend', handleTouchEnd, { passive: false });
+        sidebarHandle.addEventListener('click', handleHandleClick);
+        
+        // Handle window resize
+        window.addEventListener('resize', () => {
+            const newIsMobile = window.innerWidth <= 768;
+            if (newIsMobile !== isMobile) {
+                // Reset sidebar state when switching between mobile/desktop
+                sidebar.classList.remove('expanded');
+                sidebar.style.transform = '';
+                sidebar.style.transition = '';
+            }
         });
     }
 
@@ -184,6 +337,165 @@ class ElectionMap {
         console.log(`Completed processing ${year}`);
     }
 
+    async processStateCountyData(year, stateName) {
+        const cacheKey = `${year}-${stateName}`;
+        if (this.processedStateData.has(cacheKey)) {
+            return; // Already processed this state+year
+        }
+
+        if (!this.rawCsvData) {
+            console.warn('CSV data not loaded yet');
+            return;
+        }
+
+        console.time(`Processing county data for ${stateName} ${year}`);
+        
+        // Filter to only this year + state combination
+        const stateYearData = this.rawCsvData.filter(d => 
+            d.year === year && d.state === stateName
+        );
+        
+        // Process this state's county data specifically
+        this.processStateElectionData(stateYearData, year, stateName);
+        this.processedStateData.set(cacheKey, true);
+        
+        console.timeEnd(`Processing county data for ${stateName} ${year}`);
+    }
+
+    processStateElectionData(csvData, targetYear, targetState) {
+        // Process county data for a specific state+year combination
+        const rawData = new Map();
+        
+        csvData.forEach(d => {
+            const year = d.year;
+            const state = d.state;
+            let county = d.county_fips;
+            const candidate = d.candidate;
+            const party = this.normalizeParty(d.party);
+            const votes = parseInt(d.candidatevotes);
+            const mode = d.mode || 'TOTAL';
+            
+            // Skip invalid data
+            if (year === 'year' || !county || !votes || votes < 0) return;
+            if (candidate === 'TOTAL VOTES CAST' || candidate === '') return;
+            
+            // Skip overvotes and undervotes (comprehensive check)
+            const candidateUpper = candidate.toUpperCase().trim();
+            if (candidateUpper === 'OVERVOTES' || candidateUpper === 'UNDERVOTES' || 
+                candidateUpper === 'OVER VOTES' || candidateUpper === 'UNDER VOTES' ||
+                candidateUpper.includes('OVERVOTE') || candidateUpper.includes('UNDERVOTE')) return;
+            
+            // Special handling for Rhode Island: aggregate to county level
+            if (state === 'RHODE ISLAND' && county && county.length === 10) {
+                county = county.substring(0, 5);
+            }
+            
+            // Initialize nested structure
+            if (!rawData.has(year)) rawData.set(year, new Map());
+            if (!rawData.get(year).has(state)) rawData.get(year).set(state, new Map());
+            if (!rawData.get(year).get(state).has(county)) {
+                rawData.get(year).get(state).set(county, { modes: new Map(), name: d.county_name });
+            }
+            
+            const countyData = rawData.get(year).get(state).get(county);
+            if (!countyData.modes.has(mode)) countyData.modes.set(mode, new Map());
+            if (!countyData.modes.get(mode).has(party)) countyData.modes.get(mode).set(party, 0);
+            
+            countyData.modes.get(mode).set(party, countyData.modes.get(mode).get(party) + votes);
+        });
+        
+        // Process and store county results for this state
+        this.processStateRawData(rawData, targetYear, targetState);
+    }
+
+    processStateRawData(rawData, targetYear, targetState) {
+        rawData.forEach((yearData, year) => {
+            if (!this.electionData.has(year)) this.electionData.set(year, new Map());
+            if (!this.countyResults.has(year)) this.countyResults.set(year, new Map());
+            
+            yearData.forEach((stateData, state) => {
+                if (state !== targetState) return; // Only process target state
+                
+                if (!this.electionData.get(year).has(state)) this.electionData.get(year).set(state, new Map());
+                
+                stateData.forEach((countyData, county) => {
+                    const modes = countyData.modes;
+                    const finalVotes = new Map();
+                    
+                    // Determine which modes to use (prefer TOTAL VOTES > TOTAL > component modes)
+                    if (modes.has('TOTAL VOTES')) {
+                        modes.get('TOTAL VOTES').forEach((votes, party) => {
+                            finalVotes.set(party, votes);
+                        });
+                    } else if (modes.has('TOTAL')) {
+                        modes.get('TOTAL').forEach((votes, party) => {
+                            finalVotes.set(party, votes);
+                        });
+                    } else {
+                        const modesToSum = Array.from(modes.keys()).filter(mode => 
+                            !['EARLY VOTING', 'LATE EARLY VOTING', 'ELECTION DAY', 'PROVISIONAL', 'ABSENTEE', 'MAIL-IN', 'ABSENTEE BY MAIL'].includes(mode) ||
+                            (!modes.has('TOTAL VOTES') && !modes.has('TOTAL'))
+                        );
+                        
+                        modesToSum.forEach(mode => {
+                            modes.get(mode).forEach((votes, party) => {
+                                finalVotes.set(party, (finalVotes.get(party) || 0) + votes);
+                            });
+                        });
+                    }
+                    
+                    // Convert to array format
+                    const candidateArray = [];
+                    finalVotes.forEach((votes, party) => {
+                        candidateArray.push({
+                            candidate: party,
+                            party: party,
+                            votes: votes,
+                            countyName: countyData.name,
+                            mode: 'PROCESSED'
+                        });
+                    });
+                    
+                    this.electionData.get(year).get(state).set(county, candidateArray);
+                    
+                    // Calculate county results
+                    const countyVotes = new Map();
+                    let countyName = 'Unknown County';
+                    
+                    candidateArray.forEach(candidate => {
+                        const currentVotes = countyVotes.get(candidate.party) || 0;
+                        countyVotes.set(candidate.party, currentVotes + candidate.votes);
+                        if (candidate.countyName) {
+                            countyName = candidate.countyName;
+                        }
+                    });
+                    
+                    const countyWinner = this.determineWinner(countyVotes);
+                    
+                    // Handle Alaska district mapping
+                    let storageKey = county;
+                    if (state === 'ALASKA' && this.alaskaFipsMapping[county]) {
+                        storageKey = this.alaskaFipsMapping[county];
+                    }
+                    
+                    // Convert Map to object for storage
+                    const countyVotesObj = {};
+                    countyVotes.forEach((votes, party) => {
+                        countyVotesObj[party] = votes;
+                    });
+                    
+                    this.countyResults.get(year).set(storageKey, {
+                        winner: countyWinner,
+                        votes: countyVotesObj,
+                        state: state,
+                        name: countyName,
+                        candidates: candidateArray
+                    });
+                });
+            });
+        });
+    }
+
     processElectionData(csvData, targetYear = null) {
         // Process raw data by mode to handle double counting properly (MagicWall approach)
         const rawData = new Map();
@@ -200,6 +512,12 @@ class ElectionMap {
             // Skip header row and invalid data
             if (year === 'year' || !county || !votes || votes < 0) return;
             if (candidate === 'TOTAL VOTES CAST' || candidate === '') return;
+            
+            // Skip overvotes and undervotes (comprehensive check)
+            const candidateUpper = candidate.toUpperCase().trim();
+            if (candidateUpper === 'OVERVOTES' || candidateUpper === 'UNDERVOTES' || 
+                candidateUpper === 'OVER VOTES' || candidateUpper === 'UNDER VOTES' ||
+                candidateUpper.includes('OVERVOTE') || candidateUpper.includes('UNDERVOTE')) return;
             
             // Special handling for Rhode Island: aggregate to county level
             if (state === 'RHODE ISLAND' && county && county.length === 10) {
@@ -284,7 +602,8 @@ class ElectionMap {
         } else if (partyLower.includes('democrat')) {
             return 'DEMOCRAT';
         } else {
-            return 'OTHER';
+            // Return the actual party name instead of lumping into "OTHER"
+            return party.toUpperCase().trim();
         }
     }
 
@@ -298,15 +617,17 @@ class ElectionMap {
             }
             
             yearData.forEach((stateData, stateName) => {
-                const stateVotes = { REPUBLICAN: 0, DEMOCRAT: 0, OTHER: 0 };
+                const stateVotes = new Map();
                 
                 stateData.forEach((countyData, countyFips) => {
-                    const countyVotes = { REPUBLICAN: 0, DEMOCRAT: 0, OTHER: 0 };
+                    const countyVotes = new Map();
                     let countyName = 'Unknown County';
                     
                     countyData.forEach(candidate => {
-                        countyVotes[candidate.party] += candidate.votes;
-                        stateVotes[candidate.party] += candidate.votes;
+                        const currentCountyVotes = countyVotes.get(candidate.party) || 0;
+                        countyVotes.set(candidate.party, currentCountyVotes + candidate.votes);
+                        const currentStateVotes = stateVotes.get(candidate.party) || 0;
+                        stateVotes.set(candidate.party, currentStateVotes + candidate.votes);
                         if (candidate.countyName) {
                             countyName = candidate.countyName;
                         }
@@ -321,9 +642,15 @@ class ElectionMap {
                         console.log(`Alaska: mapped district ${countyFips} to borough ${storageKey}`);
                     }
                     
+                    // Convert Map to object for storage
+                    const countyVotesObj = {};
+                    countyVotes.forEach((votes, party) => {
+                        countyVotesObj[party] = votes;
+                    });
+                    
                     this.countyResults.get(year).set(storageKey, {
                         winner: countyWinner,
-                        votes: countyVotes,
+                        votes: countyVotesObj,
                         state: stateName,
                         name: countyName,
                         candidates: countyData
@@ -331,9 +658,16 @@ class ElectionMap {
                 });
                 
                 const stateWinner = this.determineWinner(stateVotes);
+                
+                // Convert Map to object for storage
+                const stateVotesObj = {};
+                stateVotes.forEach((votes, party) => {
+                    stateVotesObj[party] = votes;
+                });
+                
                 this.stateResults.get(year).set(stateName, {
                     winner: stateWinner,
-                    votes: stateVotes
+                    votes: stateVotesObj
                 });
                 
                 // Debug logging for Alabama 2024 FIPS codes
@@ -351,14 +685,17 @@ class ElectionMap {
 
     determineWinner(votes) {
         let maxVotes = 0;
-        let winner = 'OTHER';
+        let winner = 'UNKNOWN';
         
-        Object.entries(votes).forEach(([party, voteCount]) => {
+        // Handle both Map objects and regular objects for backwards compatibility
+        const entries = votes instanceof Map ? votes.entries() : Object.entries(votes);
+        
+        for (const [party, voteCount] of entries) {
             if (voteCount > maxVotes) {
                 maxVotes = voteCount;
                 winner = party;
             }
-        });
+        }
         
         return winner;
     }
@@ -382,22 +719,46 @@ class ElectionMap {
         this.performNavigation();
     }
 
-    navigateToStatewide(stateName) {
+    async navigateToStatewide(stateName) {
         if (this.currentLevel === 'statewide' && this.currentState === stateName) return;
+        
+        // Show loading state immediately
+        this.showStateLoadingIndicator(stateName);
         
         this.currentLevel = 'statewide';
         this.currentState = stateName;
         this.currentCounty = null;
-        this.performNavigation();
+        
+        try {
+            // Ensure county data is loaded for this state+year
+            await this.processStateCountyData(this.currentYear, stateName);
+            
+            this.performNavigation();
+        } catch (error) {
+            console.error(`Error loading county data for ${stateName}:`, error);
+            this.showError(`Failed to load county data for ${stateName}`);
+        } finally {
+            this.hideStateLoadingIndicator();
+        }
     }
 
-    navigateToCounty(stateName, countyFips) {
+    async navigateToCounty(stateName, countyFips) {
         if (this.currentLevel === 'county' && this.currentState === stateName && this.currentCounty === countyFips) return;
         
         this.currentLevel = 'county';
         this.currentState = stateName;
         this.currentCounty = countyFips;
-        this.performNavigation();
+        
+        try {
+            // Ensure county data is loaded for this state+year
+            await this.processStateCountyData(this.currentYear, stateName);
+            
+            // Re-enable full navigation with county view
+            this.performNavigation();
+        } catch (error) {
+            console.error(`Error loading county data for ${stateName}:`, error);
+            this.showError(`Failed to load county data for ${stateName}`);
+        }
     }
 
     performNavigation() {
@@ -415,11 +776,11 @@ class ElectionMap {
         }, 10); // Small delay to batch rapid navigation calls
     }
 
-    drillUp() {
+    async drillUp() {
         switch (this.currentLevel) {
             case 'county':
                 // County > State-wide
-                this.navigateToStatewide(this.currentState);
+                await this.navigateToStatewide(this.currentState);
                 break;
             case 'statewide':
                 // State-wide > State
@@ -438,6 +799,7 @@ class ElectionMap {
     // Render methods for each view
     renderNationalView() {
         this.g.selectAll('*').remove();
+        this.lastRenderedCounty = null; // Reset county cache when leaving county view
         
         const yearResults = this.stateResults.get(this.currentYear) || new Map();
         
@@ -472,6 +834,7 @@ class ElectionMap {
 
     renderStateView() {
         this.g.selectAll('*').remove();
+        this.lastRenderedCounty = null; // Reset county cache when leaving county view
         
         // Find the state feature
         const stateFeature = topojson.feature(this.topology, this.topology.objects.states).features
@@ -495,23 +858,61 @@ class ElectionMap {
             })
             .attr('stroke', '#ffffff')
             .attr('stroke-width', 0.25)
-            .on('click', () => {
-                this.navigateToStatewide(this.currentState);
+            .on('click', async () => {
+                await this.navigateToStatewide(this.currentState);
             });
+    }
+
+    getStateCounties(stateName) {
+        // Cache TopoJSON county features by state to avoid repeated processing
+        if (this.stateCountiesCache.has(stateName)) {
+            return this.stateCountiesCache.get(stateName);
+        }
+        
+        const stateCounties = topojson.feature(this.countiesTopology, this.countiesTopology.objects.counties).features
+            .filter(d => {
+                const stateFips = Math.floor(d.id / 1000).toString().padStart(2, '0');
+                const featureStateName = this.getStateNameFromFips(stateFips);
+                return featureStateName && featureStateName === stateName;
+            });
+            
+        this.stateCountiesCache.set(stateName, stateCounties);
+        
+        // OPTION C: Pre-compute SVG paths for this state's counties
+        this.preComputeCountyPaths(stateName, stateCounties);
+        
+        return stateCounties;
+    }
+    
+    preComputeCountyPaths(stateName, stateCounties) {
+        // Check if paths already computed for this state
+        if (this.countyPathCache.has(stateName)) {
+            return;
+        }
+        
+        console.log(`Pre-computing paths for ${stateCounties.length} counties in ${stateName}`);
+        const statePaths = new Map();
+        
+        stateCounties.forEach(county => {
+            const pathString = this.path(county);
+            statePaths.set(county.id.toString(), pathString);
+        });
+        
+        this.countyPathCache.set(stateName, statePaths);
+        console.log(`Cached ${statePaths.size} county paths for ${stateName}`);
+    }
+    
+    getCountyPath(stateName, countyId) {
+        const statePaths = this.countyPathCache.get(stateName);
+        return statePaths ? statePaths.get(countyId.toString()) : null;
     }
 
     renderStatewideView() {
         this.g.selectAll('*').remove();
+        this.lastRenderedCounty = null; // Reset county cache when leaving county view
         
-        // Get counties/districts/boroughs for this state using the working MagicWall approach
-        // Filter by state FIPS from county properties, not by county FIPS matching
-        const stateCounties = topojson.feature(this.countiesTopology, this.countiesTopology.objects.counties).features
-            .filter(d => {
-                // Use the state FIPS from the county's properties to filter by state
-                const stateFips = Math.floor(d.id / 1000).toString().padStart(2, '0'); // Extract state FIPS from county FIPS
-                const featureStateName = this.getStateNameFromFips(stateFips);
-                return featureStateName && featureStateName === this.currentState;
-            });
+        // Use cached county features
+        const stateCounties = this.getStateCounties(this.currentState);
         
         if (stateCounties.length === 0) {
             console.warn(`No county data found for ${this.currentState}`);
@@ -527,88 +928,36 @@ class ElectionMap {
             this.zoomToBounds(bounds, 0.8);
         }
         
+        // Pre-compute lookups for statewide view performance
+        const statewideCountyLookups = new Map();
+        stateCounties.forEach(county => {
+            const topoId = county.id.toString();
+            const lookup = this.findCountyFips(topoId, this.currentState);
+            statewideCountyLookups.set(topoId, lookup);
+        });
+        
         // Draw counties
         this.g.selectAll('.county')
             .data(stateCounties)
             .enter().append('path')
             .attr('class', 'county')
-            .attr('d', this.path)
+            .attr('d', d => {
+                // OPTION C: Use cached paths in statewide view too
+                const cachedPath = this.getCountyPath(this.currentState, d.id);
+                return cachedPath || this.path(d);
+            })
             .attr('fill', d => {
-                // TopoJSON gives us full 5-digit FIPS like "01009"
-                // Our data might be stored as 4-digit like "1009" 
-                // Try multiple formats to find the match
-                
-                const topoId = d.id.toString(); // e.g. "01009"
-                
-                // Try various FIPS formats
-                const formats = [
-                    topoId,                           // "01009" - full 5-digit
-                    parseInt(topoId).toString(),      // "1009" - remove leading zero
-                    topoId.substring(2),              // "009" - county part only  
-                    parseInt(topoId.substring(2)).toString() // "9" - county without leading zeros
-                ];
-                
-                let result = null;
-                for (const format of formats) {
-                    result = this.countyResults.get(this.currentYear)?.get(format);
-                    if (result && result.state === this.currentState) {
-                        break;
-                    }
-                }
-                
-                // Enhanced debug for problematic states  
-                if (['ALABAMA', 'RHODE ISLAND', 'ALASKA'].includes(this.currentState)) {
-                    if (!result) {
-                        console.log(`${this.currentState} county ${topoId}: tried formats [${formats.join(', ')}], no match found`);
-                        if (!this[`debugged_data_${this.currentState}`]) {
-                            this[`debugged_data_${this.currentState}`] = true;
-                            const stateKeys = Array.from(this.countyResults.get(this.currentYear).keys())
-                                .filter(key => {
-                                    const countyResult = this.countyResults.get(this.currentYear).get(key);
-                                    return countyResult && countyResult.state === this.currentState;
-                                });
-                            console.log(`${this.currentState} available FIPS codes (${stateKeys.length} total):`, stateKeys.slice(0, 10));
-                            console.log(`${this.currentState} first few county topo IDs:`, stateCounties.slice(0, 5).map(d => d.id));
-                            
-                            // Show specific examples of mismatches
-                            if (this.currentState === 'ALABAMA') {
-                                const firstTopoId = stateCounties[0]?.id;
-                                if (firstTopoId) {
-                                    console.log(`Alabama sample: topo=${firstTopoId}, checking data for keys: ${formats.join(', ')}`);
-                                    formats.forEach(format => {
-                                        const testResult = this.countyResults.get(this.currentYear)?.get(format);
-                                        console.log(`  ${format}: ${testResult ? `found (${testResult.state})` : 'not found'}`);
-                                    });
-                                }
-                            }
-                        }
-                    }
-                }
-                
-                return result ? this.getPartyColor(result.winner) : '#666';
+                const lookup = statewideCountyLookups.get(d.id.toString());
+                return lookup ? this.getPartyColor(lookup.result.winner) : '#666';
             })
             .attr('stroke', '#ffffff')
             .attr('stroke-width', 0.15)
-            .on('click', (event, d) => {
-                // Find the FIPS format that exists in our data (same logic as coloring)
+            .on('click', async (event, d) => {
                 const topoId = d.id.toString();
-                const formats = [
-                    topoId,                           
-                    parseInt(topoId).toString(),      
-                    topoId.substring(2),              
-                    parseInt(topoId.substring(2)).toString()
-                ];
-                
-                let countyFips = null;
-                for (const format of formats) {
-                    const result = this.countyResults.get(this.currentYear)?.get(format);
-                    if (result && result.state === this.currentState) {
-                        countyFips = format;
-                        break;
-                    }
-                }
+                const lookup = statewideCountyLookups.get(topoId);
                 
                 // For Alaska, also check if this TopoJSON ID matches a mapped borough
+                let countyFips = lookup?.format;
                 if (!countyFips && this.currentState === 'ALASKA') {
                     const result = this.countyResults.get(this.currentYear)?.get(topoId);
                     if (result && result.state === this.currentState) {
@@ -617,220 +966,177 @@ class ElectionMap {
                 }
                 
                 if (countyFips) {
-                    this.navigateToCounty(this.currentState, countyFips);
+                    await this.navigateToCounty(this.currentState, countyFips);
                 } else {
-                    console.warn(`No county data found for ${topoId} in ${this.currentState}`);
+                    console.warn(`No county data found for TopoJSON ID: ${topoId} in ${this.currentState}`);
+                    console.log('Available county results for this state:', 
+                        Array.from(this.countyResults.get(this.currentYear)?.keys() || [])
+                            .filter(fips => {
+                                const result = this.countyResults.get(this.currentYear)?.get(fips);
+                                return result && result.state === this.currentState;
+                            }).slice(0, 10)
+                    );
                 }
             })
             .on('mouseover', (event, d) => {
-                const fips4 = d.id.toString();
-                const fips5 = d.id.toString().padStart(5, '0');
-                const result = this.countyResults.get(this.currentYear)?.get(fips4) || 
-                              this.countyResults.get(this.currentYear)?.get(fips5);
-                this.showCountyTooltip(event, result);
+                const lookup = statewideCountyLookups.get(d.id.toString());
+                
+                if (lookup?.result) {
+                    this.showCountyTooltip(event, lookup.result);
+                }
             })
             .on('mouseout', () => {
                 this.hideTooltip();
             });
     }
 
-    renderCountyView() {
-        this.g.selectAll('*').remove();
-        
-        // Get all counties in the current state for context
-        const stateCounties = topojson.feature(this.countiesTopology, this.countiesTopology.objects.counties).features
-            .filter(d => {
-                const stateFips = Math.floor(d.id / 1000).toString().padStart(2, '0');
-                const featureStateName = this.getStateNameFromFips(stateFips);
-                return featureStateName && featureStateName === this.currentState;
-            });
-        
-        // Debug current county selection
-        if (this.currentState === 'ALABAMA') {
-            console.log('Alabama county view debug:', {
-                currentState: this.currentState,
-                currentCounty: this.currentCounty,
-                currentCountyType: typeof this.currentCounty,
-                stateCountiesCount: stateCounties.length,
-                firstFewCountyIds: stateCounties.slice(0, 3).map(d => d.id)
-            });
+    findCountyFips(topoId, stateName) {
+        // Cache FIPS format matching results to avoid repeated computation
+        const cacheKey = `${this.currentYear}-${stateName}-${topoId}`; // Include year in cache key
+        if (this.countyFipsCache.has(cacheKey)) {
+            return this.countyFipsCache.get(cacheKey);
         }
         
-        // Find the specific selected county
-        let selectedCountyFeature = null;
-        for (const county of stateCounties) {
-            const topoId = county.id.toString();
-            const formats = [
-                topoId,                           // "01009" - full 5-digit
-                parseInt(topoId).toString(),      // "1009" - remove leading zero
-                topoId.substring(2),              // "009" - county part only  
-                parseInt(topoId.substring(2)).toString() // "9" - county without leading zeros
-            ];
-            
-            if (formats.includes(this.currentCounty)) {
-                selectedCountyFeature = county;
-                if (this.currentState === 'ALABAMA') {
-                    console.log(`Alabama: Found selected county ${topoId} matching ${this.currentCounty}`);
-                }
+        // Apply Georgia FIPS code corrections if needed
+        let correctedTopoId = topoId;
+        if (stateName === 'GEORGIA' && this.georgiaFipsMapping[topoId]) {
+            correctedTopoId = this.georgiaFipsMapping[topoId];
+            console.log(`Georgia FIPS correction: ${topoId} -> ${correctedTopoId}`);
+        }
+        
+        const formats = [
+            correctedTopoId,                           // "01009" - full 5-digit (possibly corrected)
+            topoId,                                    // Original TopoJSON ID as fallback
+            parseInt(correctedTopoId).toString(),      // "1009" - remove leading zero
+            correctedTopoId.substring(2),              // "009" - county part only  
+            parseInt(correctedTopoId.substring(2)).toString() // "9" - county without leading zeros
+        ];
+        
+        let result = null;
+        for (const format of formats) {
+            const countyResult = this.countyResults.get(this.currentYear)?.get(format);
+            if (countyResult && countyResult.state === stateName) {
+                result = { format, result: countyResult };
                 break;
             }
         }
+        
+        // Debug logging for failed lookups
+        if (!result && stateName === 'GEORGIA') {
+            console.warn(`Georgia county lookup failed for TopoJSON ID: ${topoId}`);
+            console.log('Tried formats:', formats);
+            console.log('Sample Georgia FIPS in data:', 
+                Array.from(this.countyResults.get(this.currentYear)?.keys() || [])
+                    .filter(fips => {
+                        const countyResult = this.countyResults.get(this.currentYear)?.get(fips);
+                        return countyResult && countyResult.state === 'GEORGIA';
+                    }).slice(0, 5)
+            );
+        }
+        
+        // Cache both successful and failed lookups
+        this.countyFipsCache.set(cacheKey, result);
+        return result;
+    }
+
+    renderCountyView() {
+        // Performance check: skip full re-render if we're already showing this county
+        if (this.lastRenderedCounty === `${this.currentState}-${this.currentCounty}`) {
+            // Just update the selected county styling
+            this.g.selectAll('.county')
+                .attr('stroke-width', d => {
+                    const lookup = this.findCountyFips(d.id.toString(), this.currentState);
+                    return (lookup && lookup.format === this.currentCounty) ? 2 : 0.15;
+                })
+                .classed('selected-county', d => {
+                    const lookup = this.findCountyFips(d.id.toString(), this.currentState);
+                    return lookup && lookup.format === this.currentCounty;
+                });
+            return;
+        }
+        
+        // Use cached county features
+        const stateCounties = this.getStateCounties(this.currentState);
+        
+        // OPTIMIZED: Single loop to pre-compute lookups AND find selected county
+        const countyLookups = new Map();
+        let selectedCountyFeature = null;
+        
+        stateCounties.forEach(county => {
+            const topoId = county.id.toString();
+            const lookup = this.findCountyFips(topoId, this.currentState);
+            countyLookups.set(topoId, lookup);
+            
+            // While we're looping, find the selected county
+            if (!selectedCountyFeature && lookup && lookup.format === this.currentCounty) {
+                selectedCountyFeature = county;
+            }
+        });
             
         if (!selectedCountyFeature) {
             console.error(`County view: could not find county feature for FIPS ${this.currentCounty}`);
             return;
         }
         
-        // Zoom to the selected county
-        const bounds = this.path.bounds(selectedCountyFeature);
-        this.zoomToBounds(bounds, 0.6); // More padding for county detail
+        // Zoom to the selected county with fast transition and cached bounds
+        const cacheKey = `${this.currentState}-${this.currentCounty}`;
+        let bounds = this.countyBoundsCache.get(cacheKey);
+        if (!bounds) {
+            bounds = this.path.bounds(selectedCountyFeature);
+            this.countyBoundsCache.set(cacheKey, bounds);
+        }
+        this.zoomToBounds(bounds, 0.6, true); // Fast zoom with reduced duration
         
-        // Draw all counties in the state
-        this.g.selectAll('.county')
-            .data(stateCounties)
-            .enter().append('path')
+        // OPTION A OPTIMIZATION: Smart DOM updates instead of destroy/rebuild
+        const counties = this.g.selectAll('.county').data(stateCounties, d => d.id);
+        
+        // Remove counties that no longer exist (rare)
+        counties.exit().remove();
+        
+        // Add new counties (first time or state change)
+        const newCounties = counties.enter().append('path')
             .attr('class', 'county')
-            .attr('d', this.path)
-            .attr('fill', d => {
-                const topoId = d.id.toString();
-                const formats = [
-                    topoId,                           
-                    parseInt(topoId).toString(),      
-                    topoId.substring(2),              
-                    parseInt(topoId.substring(2)).toString()
-                ];
-                
-                let result = null;
-                for (const format of formats) {
-                    result = this.countyResults.get(this.currentYear)?.get(format);
-                    if (result && result.state === this.currentState) {
-                        break;
-                    }
-                }
-                
-                return result ? this.getPartyColor(result.winner) : '#666';
-            })
-            .attr('stroke', d => {
-                // Highlight selected county with glowing white border
-                const topoId = d.id.toString();
-                const formats = [
-                    topoId,                           
-                    parseInt(topoId).toString(),      
-                    topoId.substring(2),              
-                    parseInt(topoId.substring(2)).toString()
-                ];
-                
-                return formats.includes(this.currentCounty) ? '#ffffff' : '#ffffff';
-            })
-            .attr('stroke-width', d => {
-                // Thicker, glowing border for selected county
-                const topoId = d.id.toString();
-                const formats = [
-                    topoId,                           
-                    parseInt(topoId).toString(),      
-                    topoId.substring(2),              
-                    parseInt(topoId.substring(2)).toString()
-                ];
-                
-                const isSelected = formats.includes(this.currentCounty);
-                
-                // Debug stroke-width for Alabama
-                if (this.currentState === 'ALABAMA' && isSelected) {
-                    console.log(`Alabama stroke debug - County ${topoId}: will have thick border (2px)`);
-                }
-                
-                return isSelected ? 2 : 0.15;
-            })
-            .style('filter', d => {
-                // Add very subtle floating effect to selected county
-                const topoId = d.id.toString();
-                const formats = [
-                    topoId,                           
-                    parseInt(topoId).toString(),      
-                    topoId.substring(2),              
-                    parseInt(topoId.substring(2)).toString()
-                ];
-                
-                const isSelected = formats.includes(this.currentCounty);
-                
-                // Debug for Alabama glow issues
-                if (this.currentState === 'ALABAMA' && (isSelected || formats[0] === this.currentCounty)) {
-                    console.log(`Alabama glow debug - County ${topoId}:`, {
-                        formats: formats,
-                        currentCounty: this.currentCounty,
-                        isSelected: isSelected,
-                        willGlow: isSelected
-                    });
-                }
-                
-                return isSelected ? 
-                    'drop-shadow(0 0 8px rgba(255,255,255,1)) drop-shadow(0 0 16px rgba(255,255,255,0.6)) drop-shadow(0 2px 6px rgba(0,0,0,0.3))' : 
-                    'none';
-            })
-            .style('transform', d => {
-                // Very subtle floating lift
-                const topoId = d.id.toString();
-                const formats = [
-                    topoId,                           
-                    parseInt(topoId).toString(),      
-                    topoId.substring(2),              
-                    parseInt(topoId.substring(2)).toString()
-                ];
-                
-                return formats.includes(this.currentCounty) ? 'translate(0, -0.1px)' : 'none';
-            })
-            .style('transform-origin', 'center')
             .on('click', (event, d) => {
-                // Enable county-to-county navigation in county view
-                const topoId = d.id.toString();
-                const formats = [
-                    topoId,                           
-                    parseInt(topoId).toString(),      
-                    topoId.substring(2),              
-                    parseInt(topoId.substring(2)).toString()
-                ];
-                
-                let newCountyFips = null;
-                for (const format of formats) {
-                    const result = this.countyResults.get(this.currentYear)?.get(format);
-                    if (result && result.state === this.currentState) {
-                        newCountyFips = format;
-                        break;
-                    }
-                }
-                
-                // Navigate to the clicked county (stay in county view, just change selection)
-                if (newCountyFips && newCountyFips !== this.currentCounty) {
-                    this.navigateToCounty(this.currentState, newCountyFips);
-                }
+                // Disable county-to-county navigation
+                event.stopPropagation();
             })
             .on('mouseover', (event, d) => {
-                const topoId = d.id.toString();
-                const formats = [
-                    topoId,                           
-                    parseInt(topoId).toString(),      
-                    topoId.substring(2),              
-                    parseInt(topoId.substring(2)).toString()
-                ];
+                const lookup = countyLookups.get(d.id.toString());
                 
-                let result = null;
-                for (const format of formats) {
-                    result = this.countyResults.get(this.currentYear)?.get(format);
-                    if (result && result.state === this.currentState) {
-                        break;
-                    }
-                }
-                
-                if (result) {
+                if (lookup?.result) {
+                    const result = lookup.result;
                     this.showTooltip(event, `${result.name}<br/>${result.winner}: ${result.votes[result.winner].toLocaleString()} votes`);
                 }
             })
             .on('mouseleave', () => {
                 this.hideTooltip();
             });
+        
+        // Update all counties (new + existing) with current data - optimized
+        const allCounties = counties.merge(newCounties);
+        const self = this; // Preserve reference to ElectionMap instance
+        allCounties.each(function(d) {
+            const element = d3.select(this);
+            const lookup = countyLookups.get(d.id.toString());
+            const isSelected = lookup && lookup.format === self.currentCounty;
+            
+            // Use cached path if available for better performance
+            const cachedPath = self.getCountyPath(self.currentState, d.id);
+            
+            // Batch all attribute updates to minimize DOM reflow
+            element
+                .attr('d', cachedPath || self.path(d))
+                .attr('fill', lookup ? self.getPartyColor(lookup.result.winner) : '#666')
+                .attr('stroke', '#ffffff')
+                .attr('stroke-width', isSelected ? 2 : 0.15)
+                .classed('selected-county', isSelected);
+        });
+        
+        // Cache the current render to avoid unnecessary re-renders
+        this.lastRenderedCounty = `${this.currentState}-${this.currentCounty}`;
     }
 
-    zoomToBounds(bounds, paddingFactor = 0.8) {
+    zoomToBounds(bounds, paddingFactor = 0.8, fastTransition = false) {
         const [[x0, y0], [x1, y1]] = bounds;
         const dx = x1 - x0;
         const dy = y1 - y0;
@@ -843,8 +1149,11 @@ class ElectionMap {
         const scale = Math.min(rect.width / dx, rect.height / dy) * paddingFactor;
         const translate = [rect.width / 2 - scale * x, rect.height / 2 - scale * y];
         
+        // Use faster transition for county-to-county navigation
+        const duration = fastTransition ? 150 : 750;
+        
         this.svg.transition()
-            .duration(750)
+            .duration(duration)
             .call(this.zoom.transform, d3.zoomIdentity.translate(translate[0], translate[1]).scale(scale));
     }
 
@@ -866,7 +1175,24 @@ class ElectionMap {
         }
     }
 
+    showStateLoadingIndicator(stateName) {
+        const sidebar = document.getElementById('results-summary');
+        if (sidebar) {
+            sidebar.innerHTML = `
+                <div class="loading-state" style="padding: 1rem; text-align: center;">
+                    <div class="loading-spinner" style="margin: 1rem auto; width: 20px; height: 20px; border: 2px solid #f3f3f3; border-top: 2px solid #007bff; border-radius: 50%; animation: spin 1s linear infinite;"></div>
+                    <div>Loading ${stateName} county data...</div>
+                </div>
+            `;
+        }
+    }
+
+    hideStateLoadingIndicator() {
+        // Loading indicator will be replaced by regular content in updateSidebar
+    }
+
     showTooltip(event, content) {
+        // Create tooltip only once to avoid DOM manipulation lag
         if (!this.tooltip) {
             this.tooltip = d3.select('body').append('div')
                 .attr('class', 'tooltip')
@@ -879,9 +1205,11 @@ class ElectionMap {
                 .style('pointer-events', 'none')
                 .style('z-index', '1001')
                 .style('border', '1px solid #555')
-                .style('opacity', 0);
+                .style('opacity', 0)
+                .style('transition', 'none'); // Remove transitions for instant response
         }
 
+        // Update content and position instantly without transitions
         this.tooltip
             .html(content)
             .style('left', (event.pageX + 10) + 'px')
@@ -896,7 +1224,6 @@ class ElectionMap {
     }
 
     updateCurrentView() {
-        // Debounce rapid view changes and use requestAnimationFrame for smooth rendering
         if (this.debounceTimeout) {
             clearTimeout(this.debounceTimeout);
         }
@@ -918,7 +1245,7 @@ class ElectionMap {
                         break;
                 }
             });
-        }, 50); // 50ms debounce
+        }, 10);
     }
 
     updateBreadcrumb() {
@@ -982,6 +1309,14 @@ class ElectionMap {
     updateSidebar() {
         document.getElementById('sidebar-title').textContent = this.getSidebarTitle();
         
+        // Auto-expand sidebar on mobile when content updates
+        if (window.innerWidth <= 768 && this.expandSidebar) {
+            // Brief delay to let content load, then expand
+            setTimeout(() => {
+                this.expandSidebar();
+            }, 300);
+        }
+        
         const resultsContainer = document.getElementById('results-summary');
         const winnerInfo = document.getElementById('winner-info');
         
@@ -1022,36 +1357,40 @@ class ElectionMap {
             return;
         }
         
-        const nationalVotes = { REPUBLICAN: 0, DEMOCRAT: 0, OTHER: 0 };
-        const stateWins = { REPUBLICAN: 0, DEMOCRAT: 0, OTHER: 0 };
+        const nationalVotes = new Map();
+        const stateWins = new Map();
         
         yearResults.forEach(result => {
             Object.entries(result.votes).forEach(([party, votes]) => {
-                nationalVotes[party] += votes;
+                const currentNationalVotes = nationalVotes.get(party) || 0;
+                nationalVotes.set(party, currentNationalVotes + votes);
             });
-            stateWins[result.winner]++;
+            const currentStateWins = stateWins.get(result.winner) || 0;
+            stateWins.set(result.winner, currentStateWins + 1);
         });
         
         const nationalWinner = this.determineWinner(nationalVotes);
         this.updateWinnerBanner(winnerInfo, nationalWinner, nationalVotes);
         
-        const totalVotes = Object.values(nationalVotes).reduce((a, b) => a + b, 0);
+        const totalVotes = Array.from(nationalVotes.values()).reduce((a, b) => a + b, 0);
         
         // Sort parties by vote count (highest to lowest)
-        const sortedParties = Object.entries(nationalVotes)
+        const sortedParties = Array.from(nationalVotes.entries())
             .filter(([party, votes]) => votes > 0)
             .sort(([,a], [,b]) => b - a);
 
         let partyResults = '';
         sortedParties.forEach(([party, votes]) => {
+            const statesWon = stateWins.get(party) || 0;
+            const cssClass = this.getPartyCssClass(party);
             partyResults += `
-                <div class="result-item ${party.toLowerCase()}">
+                <div class="result-item ${cssClass}">
                     <div class="candidate-name">${this.getPartyName(party)}</div>
                     <div class="vote-info">
                         ${votes.toLocaleString()} votes 
                         (${((votes / totalVotes) * 100).toFixed(1)}%)
                     </div>
-                    <div class="vote-info">${stateWins[party]} states won</div>
+                    <div class="vote-info">${statesWon} states won</div>
                 </div>
             `;
         });
@@ -1109,12 +1448,13 @@ class ElectionMap {
         this.updateWinnerBanner(winnerInfo, stateResult.winner, stateResult.votes);
         
         // Count county wins
-        const countyWins = { REPUBLICAN: 0, DEMOCRAT: 0, OTHER: 0 };
+        const countyWins = new Map();
         let totalCounties = 0;
         
         this.countyResults.get(this.currentYear)?.forEach((result, fips) => {
             if (result.state === this.currentState) {
-                countyWins[result.winner]++;
+                const currentWins = countyWins.get(result.winner) || 0;
+                countyWins.set(result.winner, currentWins + 1);
                 totalCounties++;
             }
         });
@@ -1133,32 +1473,28 @@ class ElectionMap {
         
         const totalVotes = Object.values(stateResult.votes).reduce((a, b) => a + b, 0);
         
-        resultsContainer.innerHTML = `
-            <div class="result-item ${stateResult.winner.toLowerCase()}">
-                <div class="candidate-name">${this.getPartyName(stateResult.winner)}</div>
-                <div class="vote-info">
-                    ${stateResult.votes[stateResult.winner].toLocaleString()} votes 
-                    (${((stateResult.votes[stateResult.winner] / totalVotes) * 100).toFixed(1)}%)
+        // Sort all parties by vote count
+        const sortedParties = Object.entries(stateResult.votes)
+            .filter(([party, votes]) => votes > 0)
+            .sort(([,a], [,b]) => b - a);
+            
+        let partyResults = '';
+        sortedParties.forEach(([party, votes]) => {
+            const countiesWon = countyWins.get(party) || 0;
+            const cssClass = this.getPartyCssClass(party);
+            partyResults += `
+                <div class="result-item ${cssClass}">
+                    <div class="candidate-name">${this.getPartyName(party)}</div>
+                    <div class="vote-info">
+                        ${votes.toLocaleString()} votes 
+                        (${((votes / totalVotes) * 100).toFixed(1)}%)
+                    </div>
+                    <div class="vote-info">${countiesWon} counties won</div>
                 </div>
-                <div class="vote-info">${countyWins[stateResult.winner]} counties won</div>
-            </div>
-            <div class="result-item ${stateResult.winner === 'REPUBLICAN' ? 'democrat' : 'republican'}">
-                <div class="candidate-name">${this.getPartyName(stateResult.winner === 'REPUBLICAN' ? 'DEMOCRAT' : 'REPUBLICAN')}</div>
-                <div class="vote-info">
-                    ${stateResult.votes[stateResult.winner === 'REPUBLICAN' ? 'DEMOCRAT' : 'REPUBLICAN'].toLocaleString()} votes 
-                    (${((stateResult.votes[stateResult.winner === 'REPUBLICAN' ? 'DEMOCRAT' : 'REPUBLICAN'] / totalVotes) * 100).toFixed(1)}%)
-                </div>
-                <div class="vote-info">${countyWins[stateResult.winner === 'REPUBLICAN' ? 'DEMOCRAT' : 'REPUBLICAN']} counties won</div>
-            </div>
-            ${stateResult.votes.OTHER > 0 ? `
-            <div class="result-item other">
-                <div class="candidate-name">Other/Third Party</div>
-                <div class="vote-info">
-                    ${stateResult.votes.OTHER.toLocaleString()} votes 
-                    (${((stateResult.votes.OTHER / totalVotes) * 100).toFixed(1)}%)
-                </div>
-                <div class="vote-info">${countyWins.OTHER} counties won</div>
-            </div>` : ''}
+            `;
+        });
+        
+        resultsContainer.innerHTML = partyResults + `
             <p style="margin-top: 1rem; opacity: 0.8; font-size: 0.9rem;">
                 Click on any county to view detailed results.
             </p>
@@ -1223,16 +1559,21 @@ class ElectionMap {
         const winnerName = document.getElementById('winner-name');
         const winnerParty = document.getElementById('winner-party');
         
-        winnerBanner.className = `winner-banner ${winner.toLowerCase()}`;
+        const cssClass = this.getPartyCssClass(winner);
+        winnerBanner.className = `winner-banner ${cssClass}`;
         winnerName.textContent = this.getPartyName(winner);
-        winnerParty.textContent = `${votes[winner].toLocaleString()} votes`;
+        
+        // Handle both Map objects and regular objects
+        const winnerVotes = votes instanceof Map ? votes.get(winner) : votes[winner];
+        winnerParty.textContent = `${winnerVotes.toLocaleString()} votes`;
     }
 
     getPartyColor(party) {
         switch (party) {
             case 'REPUBLICAN': return '#DC143C';
             case 'DEMOCRAT': return '#4169E1';
-            default: return '#9370DB';
+            case 'LIBERTARIAN': return '#FED105'; // Libertarian Party official yellow
+            default: return '#9370DB'; // Purple for other third parties
         }
     }
 
@@ -1240,7 +1581,26 @@ class ElectionMap {
         switch (party) {
             case 'REPUBLICAN': return 'Republican';
             case 'DEMOCRAT': return 'Democrat';
-            default: return 'Other/Third Party';
+            // Handle common third parties with proper names
+            case 'GREEN': return 'Green Party';
+            case 'LIBERTARIAN': return 'Libertarian';
+            case 'CONSTITUTION': return 'Constitution Party';
+            case 'REFORM': return 'Reform Party';
+            case 'INDEPENDENT': return 'Independent';
+            default: 
+                // Convert party name to title case for display
+                return party.split(' ').map(word => 
+                    word.charAt(0).toUpperCase() + word.slice(1).toLowerCase()
+                ).join(' ');
+        }
+    }
+    
+    getPartyCssClass(party) {
+        switch (party) {
+            case 'REPUBLICAN': return 'republican';
+            case 'DEMOCRAT': return 'democrat';
+            case 'LIBERTARIAN': return 'libertarian';
+            default: return 'other';
         }
     }
 
@@ -1323,17 +1683,12 @@ class ElectionMap {
         const winnerVotes = result.votes[result.winner];
         const percentage = ((winnerVotes / totalVotes) * 100).toFixed(1);
         
-        this.tooltip.transition()
-            .duration(200)
-            .style('opacity', .9);
-            
-        this.tooltip.html(`
+        // Use the same tooltip method for consistency and performance
+        this.showTooltip(event, `
             <strong>${result.name}</strong><br/>
             Winner: ${this.getPartyName(result.winner)}<br/>
             Votes: ${winnerVotes.toLocaleString()} (${percentage}%)
-        `)
-        .style('left', (event.pageX + 10) + 'px')
-        .style('top', (event.pageY - 10) + 'px');
+        `);
     }
 
     hideTooltip() {
@@ -1351,7 +1706,7 @@ class ElectionMap {
             .attr('height', rect.height);
             
         this.projection
-            .scale(Math.min(rect.width, rect.height) * 0.8)
+            .scale(Math.min(rect.width, rect.height) * 1.0)
             .translate([rect.width / 2, rect.height / 2]);
             
         this.updateCurrentView();
@@ -1364,5 +1719,14 @@ class ElectionMap {
 }
 
 document.addEventListener('DOMContentLoaded', () => {
-    new ElectionMap();
+    const electionMap = new ElectionMap();
+    
+    // Expose cache clearing for debugging
+    window.clearElectionCaches = () => {
+        electionMap.clearPerformanceCaches();
+        location.reload(); // Force full refresh
+    };
+    
+    // Expose map instance for debugging
+    window.electionMap = electionMap;
 });
