@@ -195,6 +195,8 @@ class ElectionMap {
         
         // Ensure sidebar starts collapsed
         sidebar.classList.remove('expanded');
+        sidebar.style.transform = 'translateY(calc(100% - 60px))';
+        sidebar.style.transition = 'transform 0.4s cubic-bezier(0.25, 0.46, 0.45, 0.94)';
         
         // Check if device is mobile
         const isMobile = window.innerWidth <= 768;
