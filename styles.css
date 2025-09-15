@@ -450,8 +450,15 @@ body {
     
     .sidebar-header {
         flex-shrink: 0;
-        padding: 0 1rem;
+        padding: 1rem;
         margin-bottom: 1rem;
+        font-size: 1.1rem;
+    }
+    
+    .sidebar-header h2 {
+        font-size: 1.4rem;
+        font-weight: 600;
+        margin: 0;
     }
     
     #results-summary {
