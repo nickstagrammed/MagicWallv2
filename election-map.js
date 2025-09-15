@@ -301,19 +301,26 @@ class ElectionMap {
         const sidebarHeader = document.querySelector('.sidebar-header');
         
         if (sidebarContent) {
-            // Prevent sidebar dragging when scrolling content (except on header)
+            // Prevent sidebar dragging when scrolling content (except on header or during drag)
             sidebarContent.addEventListener('touchstart', (e) => {
-                // Allow dragging if touch starts on header
-                if (sidebarHeader && sidebarHeader.contains(e.target)) {
-                    return; // Don't stop propagation for header touches
+                // Always allow dragging if touch starts on header or handle
+                if ((sidebarHeader && sidebarHeader.contains(e.target)) || 
+                    (sidebarHandle && sidebarHandle.contains(e.target))) {
+                    return; // Don't stop propagation for header/handle touches
                 }
                 e.stopPropagation();
             }, { passive: true });
             
             sidebarContent.addEventListener('touchmove', (e) => {
-                // Allow dragging if currently dragging from header
+                // Allow dragging if currently dragging from header/handle
                 if (isDragging) {
                     return; // Don't stop propagation during active drag
+                }
+                // Also check if we're near the header area (top 80px of content)
+                const rect = sidebarContent.getBoundingClientRect();
+                const touchY = e.touches[0].clientY;
+                if (touchY - rect.top < 80) {
+                    return; // Allow dragging in header area
                 }
                 e.stopPropagation();
             }, { passive: true });
