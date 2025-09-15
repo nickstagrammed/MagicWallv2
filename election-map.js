@@ -290,48 +290,47 @@ class ElectionMap {
             isExpanded = false;
         };
         
-        // Add event listeners - only to handle and header, not content area
+        // Add event listeners to handle
         sidebarHandle.addEventListener('touchstart', handleTouchStart, { passive: false });
         sidebarHandle.addEventListener('touchmove', handleTouchMove, { passive: false });
         sidebarHandle.addEventListener('touchend', handleTouchEnd, { passive: false });
         sidebarHandle.addEventListener('click', handleHandleClick);
         
-        // Allow natural scrolling in content area, but enable dragging from header
-        const sidebarContent = document.querySelector('.sidebar-content');
-        const sidebarHeader = document.querySelector('.sidebar-header');
-        
-        if (sidebarContent) {
-            // Prevent sidebar dragging when scrolling content (except on header or during drag)
-            sidebarContent.addEventListener('touchstart', (e) => {
-                // Always allow dragging if touch starts on header or handle
-                if ((sidebarHeader && sidebarHeader.contains(e.target)) || 
-                    (sidebarHandle && sidebarHandle.contains(e.target))) {
-                    return; // Don't stop propagation for header/handle touches
-                }
-                e.stopPropagation();
-            }, { passive: true });
+        // Add event listeners to the entire sidebar for dragging, but with smart detection
+        sidebar.addEventListener('touchstart', (e) => {
+            const rect = sidebar.getBoundingClientRect();
+            const touchY = e.touches[0].clientY;
+            const relativeY = touchY - rect.top;
             
-            sidebarContent.addEventListener('touchmove', (e) => {
-                // Allow dragging if currently dragging from header/handle
-                if (isDragging) {
-                    return; // Don't stop propagation during active drag
-                }
-                // Also check if we're near the header area (top 80px of content)
-                const rect = sidebarContent.getBoundingClientRect();
-                const touchY = e.touches[0].clientY;
-                if (touchY - rect.top < 80) {
-                    return; // Allow dragging in header area
-                }
-                e.stopPropagation();
-            }, { passive: true });
-        }
+            // Allow dragging from:
+            // 1. Top 100px of sidebar (handle + header area)
+            // 2. Or if sidebar is collapsed (only handle visible)
+            if (relativeY < 100 || !isExpanded) {
+                handleTouchStart(e);
+            }
+        }, { passive: false });
         
-        // Add touch listeners to header for dragging (now that it's inside content)
-        if (sidebarHeader) {
-            sidebarHeader.addEventListener('touchstart', handleTouchStart, { passive: false });
-            sidebarHeader.addEventListener('touchmove', handleTouchMove, { passive: false });
-            sidebarHeader.addEventListener('touchend', handleTouchEnd, { passive: false });
-        }
+        sidebar.addEventListener('touchmove', (e) => {
+            if (isDragging) {
+                handleTouchMove(e);
+            } else {
+                // Allow normal scrolling in content area
+                const rect = sidebar.getBoundingClientRect();
+                const touchY = e.touches[0].clientY;
+                const relativeY = touchY - rect.top;
+                
+                // Only allow scrolling if we're below the header area AND sidebar is expanded
+                if (relativeY > 100 && isExpanded) {
+                    return; // Allow normal scrolling
+                }
+            }
+        }, { passive: false });
+        
+        sidebar.addEventListener('touchend', (e) => {
+            if (isDragging) {
+                handleTouchEnd(e);
+            }
+        }, { passive: false });
         
         // Global touch handler to clear tooltips on any touch
         document.addEventListener('touchstart', () => {
