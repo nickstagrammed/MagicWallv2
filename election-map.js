@@ -1396,13 +1396,7 @@ class ElectionMap {
     updateSidebar() {
         document.getElementById('sidebar-title').textContent = this.getSidebarTitle();
         
-        // Auto-expand sidebar on mobile when content updates
-        if (window.innerWidth <= 768 && this.expandSidebar) {
-            // Brief delay to let content load, then expand
-            setTimeout(() => {
-                this.expandSidebar();
-            }, 300);
-        }
+        // Don't auto-expand sidebar - let user control it
         
         const resultsContainer = document.getElementById('results-summary');
         const winnerInfo = document.getElementById('winner-info');
