@@ -331,15 +331,15 @@ body {
 }
 
 .county {
-    stroke: #ffffff;
-    stroke-width: 0.15px;
+    stroke: rgba(255, 255, 255, 0.5);
+    stroke-width: 0.1px;
     cursor: pointer;
     transition: stroke-width 0.2s, filter 0.3s ease, transform 0.3s ease;
 }
 
 .county:hover {
-    stroke-width: 0.5px;
-    stroke: #ffffff;
+    stroke-width: 0.3px;
+    stroke: rgba(255, 255, 255, 0.8);
 }
 
 .county.republican {
@@ -391,7 +391,7 @@ body {
         border-top-left-radius: 20px;
         border-top-right-radius: 20px;
         transform: translateY(calc(100% - 60px));
-        transition: transform 0.3s ease-out;
+        transition: transform 0.4s cubic-bezier(0.25, 0.46, 0.45, 0.94);
         z-index: 1000;
         box-shadow: 0 -5px 20px rgba(0, 0, 0, 0.3);
     }

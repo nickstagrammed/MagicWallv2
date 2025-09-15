@@ -200,6 +200,7 @@ class ElectionMap {
         const handleTouchStart = (e) => {
             startY = e.touches[0].clientY;
             isDragging = true;
+            this.dragStartTime = Date.now();
             sidebar.style.transition = 'none';
             document.body.classList.add('sidebar-dragging');
         };
@@ -208,20 +209,24 @@ class ElectionMap {
         const handleTouchMove = (e) => {
             if (!isDragging) return;
             
+            e.preventDefault(); // Prevent scrolling while dragging
             currentY = e.touches[0].clientY;
             const deltaY = startY - currentY;
             
-            // Calculate new position
+            // Calculate new position with smoother boundaries
+            const maxHeight = sidebar.offsetHeight - 60;
             let newTranslateY;
+            
             if (isExpanded) {
-                // When expanded, allow dragging down
-                newTranslateY = Math.min(0, -deltaY);
+                // When expanded, allow dragging down with resistance
+                newTranslateY = Math.min(0, Math.max(-maxHeight, -deltaY * 0.8));
             } else {
-                // When collapsed, allow dragging up
-                newTranslateY = Math.max(-(sidebar.offsetHeight - 60), -deltaY);
+                // When collapsed, allow dragging up with resistance
+                newTranslateY = Math.min(0, Math.max(-maxHeight, -deltaY * 0.8));
             }
             
-            sidebar.style.transform = `translateY(calc(100% - 60px + ${newTranslateY}px))`;
+            const baseTransform = isExpanded ? 0 : maxHeight;
+            sidebar.style.transform = `translateY(${baseTransform + newTranslateY}px)`;
         };
         
         // Touch end
@@ -229,22 +234,23 @@ class ElectionMap {
             if (!isDragging) return;
             
             isDragging = false;
-            sidebar.style.transition = 'transform 0.3s ease-out';
+            sidebar.style.transition = 'transform 0.4s cubic-bezier(0.25, 0.46, 0.45, 0.94)';
             document.body.classList.remove('sidebar-dragging');
             
             const deltaY = startY - currentY;
-            const threshold = 50; // Minimum swipe distance
+            const velocity = Math.abs(deltaY) / (Date.now() - this.dragStartTime || 1);
+            const threshold = velocity > 0.5 ? 30 : 80; // Lower threshold for fast swipes
             
-            if (Math.abs(deltaY) > threshold) {
-                if (deltaY > 0 && !isExpanded) {
-                    // Swipe up - expand
-                    this.expandSidebar();
-                } else if (deltaY < 0 && isExpanded) {
-                    // Swipe down - collapse
-                    this.collapseSidebar();
-                }
+            // Determine next state based on distance and velocity
+            const shouldExpand = deltaY > threshold || (velocity > 0.3 && deltaY > 0);
+            const shouldCollapse = deltaY < -threshold || (velocity > 0.3 && deltaY < 0);
+            
+            if (shouldExpand && !isExpanded) {
+                this.expandSidebar();
+            } else if (shouldCollapse && isExpanded) {
+                this.collapseSidebar();
             } else {
-                // Snap back to current state
+                // Snap back to current state with smoother transition
                 if (isExpanded) {
                     this.expandSidebar();
                 } else {
@@ -264,12 +270,16 @@ class ElectionMap {
         
         // Expand sidebar
         this.expandSidebar = () => {
+            sidebar.style.transition = 'transform 0.4s cubic-bezier(0.25, 0.46, 0.45, 0.94)';
+            sidebar.style.transform = 'translateY(0)';
             sidebar.classList.add('expanded');
             isExpanded = true;
         };
         
         // Collapse sidebar
         this.collapseSidebar = () => {
+            sidebar.style.transition = 'transform 0.4s cubic-bezier(0.25, 0.46, 0.45, 0.94)';
+            sidebar.style.transform = 'translateY(calc(100% - 60px))';
             sidebar.classList.remove('expanded');
             isExpanded = false;
         };
